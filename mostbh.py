@@ -22,12 +22,12 @@ def mostbh(args):
     bhmdot = snap.load(5, 'bhmdot', g)
     bhmass = snap.load(5, 'bhmass', g)
 
-    wrong_file_or_die(snap.subhalodir + '/subhalobhmassive.raw', len(g) *
+    wrong_file_or_die(snap.filename('subhalo', 'bhmassive'), len(g) *
             bhdtype.itemsize)
 
-    massive = numpy.memmap(snap.subhalodir + '/subhalobhmassive.raw',
+    massive = numpy.memmap(snap.filename('subhalo', 'bhmassive'),
             mode='w+', shape=len(g), dtype=bhdtype)
-    luminous = numpy.memmap(snap.subhalodir + '/subhalobhluminous.raw',
+    luminous = numpy.memmap(snap.filename('subhalo', 'bhluminous'),
             mode='w+', shape=len(g), dtype=bhdtype)
 
     gfields = [
@@ -37,16 +37,15 @@ def mostbh(args):
     for i in filtered:
         im = bhmass[i].argmax()
         il = bhmdot[i].argmax()
-        massive[i]['pos'] = bhpos[i][im]
-        massive[i]['vel'] = bhvel[i][im]
-        massive[i]['id'] = bhid[i][im]
-        massive[i]['bhmdot'] = bhmdot[i][im]
-        massive[i]['bhmass'] = bhmass[i][im]
-        luminous[i]['pos'] = bhpos[i][il]
-        luminous[i]['vel'] = bhvel[i][il]
-        luminous[i]['id'] = bhid[i][il]
-        luminous[i]['bhmdot'] = bhmdot[i][il]
-        luminous[i]['bhmass'] = bhmass[i][il]
+        for name, var in [
+                ('pos', bhpos),
+                ('vel', bhvel),
+                ('id', bhid),
+                ('bhmdot', bhmdot),
+                ('bhmass', bhmass),
+                ]:
+             massive[name][i] = var[i][im]
+             luminous[name][i] = var[i][il]
     filtered = (g['lenbytype'][:, 5] == 0).nonzero()[0]
     print snap.snapid, 'no bh', len(filtered)
     massive['bhmass'][filtered] = numpy.nan

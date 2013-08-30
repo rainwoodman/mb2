@@ -50,7 +50,9 @@ class SubHaloDepot(Depot):
         rt['vdisp'] = f[1, 'haloveldisp']
         rt['vcirc'] = f[1, 'halovmax']
         rt['rcirc'] = f[1, 'halovmaxrad']
-        rt['grnr'] = f[1,'haloparent']
+        # i don't understand this; we do not want halo parent
+        # it's always zero
+        rt['parent'] = f[1,'haloparent']
         rt['lenbytype'] = 0
         rt['massbytype'] = 0
         return rt
@@ -81,14 +83,28 @@ def main():
     split_parser = subparsers.add_parser("split", help="split particles to six files")
     split_parser.add_argument("snap", type=SnapDir)
     split_parser.set_defaults(func=splitMain)
+
     lookup_parser = subparsers.add_parser("lookup", help="lookup properties")
     lookup_parser.add_argument("snap", type=SnapDir)
     lookup_parser.add_argument("type", type=int)
     lookup_parser.add_argument("field")
     lookup_parser.set_defaults(func=lookupMain)
+
+    fix_parser = subparsers.add_parser("fixgroupid", help="fix group id")
+    fix_parser.add_argument("snap", type=SnapDir)
+    fix_parser.set_defaults(func=fixgroupidMain)
+
     args = parser.parse_args()
 
     args.func(args)
+
+def fixgroupidMain(args):
+    snap = args.snap
+    g = snap.readgroup()
+    sub = numpy.memmap(snap.subhalofile, mode='r+', dtype=subdtype)
+    sub['groupid'] = numpy.repeat(numpy.arange(len(g)), g['nhalo'] + 1)
+    sub.flush()
+    print 'fixed', snap.snapid
 
 def splitMain(args):
     snap = args.snap
@@ -104,13 +120,8 @@ def splitMain(args):
     depot_sub = SubHaloDepot(snap.tabfile)
     depot_group = GroupDepot(snap.grouptabfile)
     
-    if os.path.isfile(snap.groupfile):
-        size = os.path.getsize(snap.groupfile)
-        N = depot_group.Ngroups
-        if size == groupdtype.itemsize  * N:
-            raise Exception("File seems to be right. quit!")
-        else:
-            print 'ovewrite', size, groupdtype.itemsize, N
+    wrong_file_or_die(snap.groupfile, depot_group.Ngroups *
+            groupdtype.itemsize)
 
     F = {}
     for type in range(6):
@@ -149,7 +160,7 @@ def splitMain(args):
             # last halo is contamination
             halo[-1]['mass'] = numpy.nan
             halo[-1]['pos'] = numpy.nan
-            halo[-1]['grnr'] = halo[0]['grnr']
+            halo[:]['groupid'] = realgroupid
             halo[-1]['len'] = group['len'][groupid] - halo['len'][:-1].sum()
             assert (halo['len'] >= 0).all()
             parstart = numpy.concatenate(([0], halo['len'].cumsum()))
@@ -195,33 +206,26 @@ def lookupMain(args):
     id = snap.load(type, 'id')
     dtype = snap.schema[field].dtype
 
-    if os.path.isfile(snap.filename(type, field)):
-        size = os.path.getsize(snap.filename(type, field))
-        N = len(id)
-        if size == dtype.itemsize  * N:
-            raise Exception("File seems to be right. quit!")
-        else:
-            print 'ovewrite', size, dtype.itemsize, N
+    wrong_file_or_die(snap.filename(type, field),
+            len(id) * dtype.itemsize)
 
     arg = id.argsort()
     idsorted = id[arg]
 
     val = numpy.empty(len(id), dtype)
-#    outfile = numpy.memmap(outputdir + '/%d/%s.raw' %(type, field), mode='w',
-#            dtype=first.schema[field].dtype, shape=len(id))
-
-    Nfound = 0
-    for fid in range(Nfiles):
-        f = snap.opensnap(fid)
-        idlookup = f[type, 'id']
-        valuelookup = f[type, field]
-        ind = idsorted.searchsorted(idlookup)
-        found = idsorted.take(ind, mode='wrap') == idlookup
-        assert (id[arg[ind[found]]] == idlookup[found]).all()
-        val.put(arg[ind[found]], valuelookup[found])
-        Nfound += found.sum()
-        print fid, found.sum()
-    assert Nfound == len(id)
+    if len(id) > 0:
+        Nfound = 0
+        for fid in range(Nfiles):
+            f = snap.opensnap(fid)
+            idlookup = f[type, 'id']
+            valuelookup = f[type, field]
+            ind = idsorted.searchsorted(idlookup)
+            found = idsorted.take(ind, mode='wrap') == idlookup
+            assert (id[arg[ind[found]]] == idlookup[found]).all()
+            val.put(arg[ind[found]], valuelookup[found])
+            Nfound += found.sum()
+            print fid, found.sum()
+        assert Nfound == len(id)
     del idsorted
 
     val.tofile(snap.open(type, field, 'w'))

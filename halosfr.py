@@ -13,31 +13,24 @@ def main():
 def halosfrMain(args):
     snap = args.snap
     g = snap.readsubhalo()
-    bhmdot = snap.load(5, 'bhmdot', g)
-    bhmass = snap.load(5, 'bhmass', g)
-    sfr = snap.load(0, 'sfr', g)
 
-    if os.path.isfile(snap.subhalodir + '/subhalosfr.raw'):
-        size = os.path.getsize(snap.subhalodir + '/subhalosfr.raw')
-        N = len(g)
-        if size == 4 * N:
-            raise Exception("File seems to be right. quit!")
-        else:
-            print 'ovewrite', size, 4 , N
-    halosfr = numpy.memmap(snap.subhalodir + '/subhalosfr.raw', shape=len(g),
-            dtype='f4', mode='w+')
-    halomdot = numpy.memmap(snap.subhalodir + '/subhalobhmdot.raw',
-            shape=len(g), dtype='f4', mode='w+')
-    halobhmass = numpy.memmap(snap.subhalodir + '/subhalobhmass.raw',
-            shape=len(g), dtype='f4', mode='w+')
-    for i in range(len(sfr)):
-        halosfr[i] = sfr[i].sum()
-        halomdot[i] = bhmdot[i].sum()
-        halobhmass[i] = bhmass[i].sum()
-        print i, len(sfr)
-    halosfr.flush()
-    halomdot.flush()
-
+    for ptype, field in [
+            (0, 'sfr'), 
+            (5, 'bhmdot'), 
+            (5, 'bhmass')]:
+        dtype = extradtype[field]
+        try:
+            wrong_file_or_die(snap.filename('subhalo', field),
+                dtype.itemsize * len(g))
+        except: 
+            continue
+        input = snap.load(ptype, field, g)
+        target = numpy.memmap(snap.filename('subhalo', field),
+            shape=len(g), dtype=dtype, mode='w+')
+        for i in range(len(g)):
+            target[i] = input[i].sum()
+           
+        target.flush()
 
 if __name__ == '__main__':
     main()

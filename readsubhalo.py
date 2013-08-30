@@ -1,4 +1,5 @@
 import numpy
+import os.path
 
 subdtype = numpy.dtype([
     ('mass', 'f4'), 
@@ -8,11 +9,11 @@ subdtype = numpy.dtype([
     ('vdisp', 'f4'),  
     ('vcirc', 'f4'),  
     ('rcirc', 'f4'),  
-    ('grnr', 'i4'),  
+    ('parent', 'i4'),  
     ('massbytype', ('f4', 6)),  
     ('lenbytype', ('u4',6)), 
     ('unused', 'f4'),    
-    ('unused2', 'u4'), 
+    ('groupid', 'u4'), 
    ])
 groupdtype = numpy.dtype([
     ('mass', 'f4'), 
@@ -31,27 +32,101 @@ pdtype = numpy.dtype([('pos', ('f4', 3)),
     ('type', 'u1')
     ])
 
+bhdtype = numpy.dtype([
+    ('pos', ('f4', 3)),
+    ('vel', ('f4', 3)),
+    ('id', 'u8'),
+    ('bhmass', 'f8'),
+    ('bhmdot', 'f8')])
+
+# extra properties of a subhalo / group
+extradtype = numpy.dtype([
+    ('bhmassive', bhdtype),
+    ('bhluminous', bhdtype),
+    ('sfr', 'f4'),
+    ('bhmass', 'f4'),
+    ('bhmdot', 'f4')])
 
 class SnapDir(object):
     def __init__(self, snapid, ROOT):
+        """ the default schema is a fake one, generated from header.txt
+            subclass of the writeable version of SnapDir use a real schema.
+
+            this is to avoid pulling in gaepsi in this public code
+        """
         snapid = int(snapid)
         self.snapid = snapid
         self.subhalodir = ROOT + '/subhalos/%03d' % snapid
         self.subhalofile = self.subhalodir + '/subhalotab.raw'
         self.groupfile = self.subhalodir + '/grouphalotab.raw'
+        self.headerfile = self.subhalodir + '/header.txt'
+        try:
+            for line in file(self.headerfile, 'r'):
+                if line.startswith('flag_double(header) = 0'):
+                   flag_double = False
+                if line.startswith('flag_double(header) = 1'):
+                   flag_double = True
+            class fakeschema:
+                def __getitem__(self, index, flag_double=flag_double):
+                    if flag_double: return numpy.dtype('f8')
+                    return numpy.dtype('f4')
+            self.schema = fakeschema()
+        except IOError:
+            self.schema = None
 
-    def readsubhalo(self):
-        return numpy.fromfile(self.subhalofile, dtype=subdtype)
+    def readsubhalo(self, g=None):
+        rt = numpy.memmap(self.subhalofile, mode='r', dtype=subdtype)
+        if g is not None:
+            rt = packarray(rt, g['nhalo'] + 1)
+        return rt
 
     def readgroup(self):
-        return numpy.fromfile(self.groupfile, dtype=groupdtype)
+        return numpy.memmap(self.groupfile, mode='r', dtype=groupdtype)
 
     def load(self, type, comp, g=None):
-        if comp in pdtype.fields:
-            dtype = pdtype[comp]
+        """ this will read in property comp of partile type type.
+            if g is given (either from readsubhalo or readgroup)
+            the returned array A will be chunked so that
+            A[0] is the property of particles in the first group
+            A[1] is the property of particles in the second group
+            so on.
+            
+            snapdir = Snapdir(18, './')
+            g = snapdir.readsubhalo()
+            v = snapdir.load(4, 'vel', g)
+            m = snapdir.load(4, 'mass', g)
+           
+            mv2 = m * v ** 2
+            mv2 = array([i.sum() for i in mv2])
+           
+            to readin extra properties of subhalos, use
+            snapdir.load('subhalo', 'bhmassive')
+            (for the most massive bh in the subhalo)
+            or
+            snapdir.load('subhalo', 'bhluminous')
+            (for the most luminous bh in the subhalo)
+            snapdir.load('subhalo', 'sfr')
+            (for the sfr of the subhalo)
+
+            this in princple also works for a group, though
+            the group properties are not assembled yet.
+
+            see extradtype for a list
+        """
+        if isinstance(type, basestring):
+            dtype = extradtype[comp]
         else:
-            dtype=self.schema[comp].dtype
-        rt = numpy.fromfile(self.filename(type, comp),
+            if comp in pdtype.fields:
+                dtype = pdtype[comp]
+            else:
+                dtype=self.schema[comp].dtype
+        size = os.path.getsize(self.filename(type, comp))
+        if size == 0:
+            rt = numpy.fromfile(self.filename(type, comp),
+                    dtype=dtype)
+        else:
+            rt = numpy.memmap(self.filename(type, comp),
+                            mode='r',
                             dtype=dtype)
         if g is None:
             return rt
@@ -61,14 +136,17 @@ class SnapDir(object):
         return file(self.filename(type, comp), mode=mode)
     def filename(self, type, comp):
         """ the file name of a type/comp """
-        return self.subhalodir + '/%d/%s.raw' % (type, comp)
+        if isinstance(type, basestring):
+            return self.subhalodir + '/%s%s.raw' % (type, comp)
+        else:
+            return self.subhalodir + '/%d/%s.raw' % (type, comp)
 
 class packarray(numpy.ndarray):
   """ A packarray packs/copies several arrays into the same memory chunk.
 
       It feels like a list of arrays, but because the memory chunk is continuous,
       
-      arithmatic operations are easier to use(via packarray.A)
+      arithmatic operations are easier to use(via packarray)
   """
   def __new__(cls, array, start=None, end=None):
     """ if end is none, start contains the sizes. 
@@ -143,4 +221,3 @@ class packarray(numpy.ndarray):
 
   def __array_wrap__(self, outarr, context=None):
     return packarray.adapt(outarr.view(numpy.ndarray), self)
-#    return numpy.ndarray.__array_wrap__(self.view(numpy.ndarray), outarr, context)

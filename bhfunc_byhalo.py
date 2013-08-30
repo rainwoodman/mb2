@@ -1,52 +1,65 @@
 from isolatesubhalo import *
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
+from matplotlib.colors import LogNorm
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from gaepsi.cosmology import agn, Cosmology
 
 def main():
-    parser = makeparser()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('snap', type=SnapDir)
     args = parser.parse_args()
     bhfuncMain(args) 
 
 def bhfuncMain(args):
-    snapid = args.snapid
-    snapname = args.snapname
-    outputdir = args.outputdir
-    groupdump = numpy.fromfile(outputdir + '/grouphalotab.raw', groupdtype)
-    groupdump = numpy.fromfile(outputdir + '/subhalotab.raw', subdtype)
-    U = args.U
-    boxsize = args.C['boxsize']
-    bhmass = numpy.log10(args.open(5, 'bhmass') * 1e10)
-    bhmdot = args.open(5, 'bhmass')
+    snap = args.snap
+    g = snap.readsubhalo()
+    U = snap.U
+    g = g[g['lenbytype'][:, 5] > 0]
+    print len(g)
+    boxsize = snap.C['boxsize']
+    bhmass = numpy.log10(snap.load(5, 'bhmass') * 1e10)
+    bhmdot = snap.load(5, 'bhmass')
     bhlum = numpy.log10(agn.bhLbol(U, bhmdot))
-    groupid = numpy.repeat(numpy.arange(len(groupdump)),
-            groupdump['lenbytype'][:, 5])
-    groupmass = numpy.log10(groupdump['mass'][groupid] * 1e10)
-
-    figure = Figure((4, 3), dpi=200)
+    
+    groupmass = numpy.log10(g['mass'] * 1e10)
+    print groupmass.max(), groupmass.min()
+    if False:
+        bhmass = numpy.array([i.max() if len(i) > 0 else 0 for i in bhmass])
+        bhlum= numpy.array([i.max() if len(i) > 0 else 0 for i in bhlum])
+    else:
+        bhmass = bhmass
+        bhlum = bhlum
+        groupmass = numpy.repeat(groupmass, g['lenbytype'][:, 5])
+    figure = Figure((3, 3), dpi=200)
     ax = figure.gca()
-    ax.plot(groupmass, bhmass, '. ', args.C['redshift'])
+    ax.plot(groupmass, bhmass, '. ', label='z = %0.2g' % snap.C['redshift'], color='k')
     canvas = FigureCanvasAgg(figure)
-    ax.set_xlabel(r'$\log M_\mathsf{Halo} / h^{-1}M_\odot$')
-    ax.set_ylabel(r'$\log M_\mathsf{BH} / h^{-1}M_\odot$')
-    ax.set_ylim(6, 9)
-    ax.set_xlim(10, 12)
-    ax.legend()
+    ax.set_xlabel(r'$\log\, h M_\mathsf{Halo} / M_\odot$', fontsize='x-large')
+    ax.set_ylabel(r'$\log\, h M_\mathsf{BH} / M_\odot$', fontsize='x-large')
+    ax.set_ylim(6, 10 + 0.2)
+    ax.set_yticks([7, 8, 9, 10])
+    ax.set_xlim(10 - 0.2, numpy.nanmax(groupmass) + 0.2)
+    ax.set_xticks([9, 10, 11, 12, 13, 14])
+    ax.set_title('z = %0.2g' % snap.C['redshift'], position=(0.2, 0.8))
     figure.tight_layout()
-    figure.savefig('bhmass-halomass-scatter-%03d.pdf' % snapid)
+    figure.savefig('bhmass-halomass-scatter-%03d.pdf' % snap.snapid)
+    figure.savefig('bhmass-halomass-scatter-%03d.png' % snap.snapid)
 
-    figure = Figure((4, 3), dpi=200)
+    figure = Figure((3, 3), dpi=200)
     ax = figure.gca()
-    ax.plot(groupmass, bhlum, '. ', label='z = %0.2g' % args.C['redshift'])
+    ax.plot(groupmass, bhlum, '. ', label='z = %0.2g' % snap.C['redshift'], color='k')
     canvas = FigureCanvasAgg(figure)
-    ax.set_xlabel(r'$\log M_\mathsf{Halo} / h^{-1}M_\odot$')
-    ax.set_ylabel(r'$\log L_\mathsf{BH} / L_\odot$')
-    ax.set_ylim(9, 12)
-    ax.set_xlim(10, 12)
-    ax.legend()
+    ax.set_xlabel(r'$\log\, h M_\mathsf{Halo} / M_\odot$', fontsize='x-large')
+    ax.set_ylabel(r'$\log\, L_\mathsf{BH} / L_\odot$', fontsize='x-large')
+    ax.set_xticks([9, 10, 11, 12, 13, 14])
+    ax.set_yticks([9, 10, 11, 12, 13, 14])
+    ax.set_ylim(9.5, 12.5)
+    ax.set_xlim(10 - 0.2, numpy.nanmax(groupmass) + 0.2)
+    ax.set_title('z = %0.2g' % snap.C['redshift'], position=(0.2, 0.8))
     figure.tight_layout()
-    figure.savefig('bhlum-halomass-scatter-%03d.pdf' % snapid)
+    figure.savefig('bhlum-halomass-scatter-%03d.pdf' % snap.snapid)
+    figure.savefig('bhlum-halomass-scatter-%03d.png' % snap.snapid)
     
     gmbins = numpy.linspace(7, 14, 6, endpoint=True)
     dig = numpy.digitize(groupmass, gmbins)
@@ -100,7 +113,7 @@ def bhfuncMain(args):
     ax.legend()
     figure.tight_layout()
     canvas = FigureCanvasAgg(figure)
-    figure.savefig("bhfunc-%03d.pdf" % snapid)
+    figure.savefig("bhfunc-%03d.pdf" % snap.snapid)
 
 
 

@@ -21,6 +21,7 @@ class SnapDir(SnapDirReadOnly):
     def __init__(self, snapid, ROOT=ROOT):
         SnapDirReadOnly.__init__(self, snapid, ROOT)
 
+        snapid = self.snapid
         self.snapname = ROOT + '/snapdir/snapdir_%03d/snapshot_%03d.%%d' %(snapid, snapid)
         first = Snapshot(self.snapname % 0, 'cmugadget')
         self.first = first
@@ -99,4 +100,12 @@ class Depot:
         self.pool = numpy.append(self.pool, 
                 self.fetch(self.ifile), axis=0)
         self.ifile += 1
+
+def wrong_file_or_die(filename, expectedsize):
+    if os.path.isfile(filename):
+        size = os.path.getsize(filename)
+        if size == expectedsize:
+            raise Exception("File seems to be right. quit!")
+        else:
+            print 'will overwrite', filename
 
