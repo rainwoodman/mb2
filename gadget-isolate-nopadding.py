@@ -40,6 +40,7 @@ def work(inputname):
             output.C['N'][ptype] = mask.sum()
           t1 += timer.interval
         for blk in input.schema:
+          if not (None, blk) in input: continue
           with Timer() as timer:
             junk = input[None, blk]
             for ptype in range(6):
@@ -53,12 +54,12 @@ def work(inputname):
     return inputname, t1, t2, t3
 def reduce(inputname, t1, t2, t3):
     print inputname, 'times', t1, t2, t3
-#with sharedmem.Pool() as pool:
-#    pool.map(work, [argv[2] % i for i in
-#        numpy.random.permutation(range(first.C['Nfiles']))],
-#            reduce=reduce)
+with sharedmem.Pool() as pool:
+    pool.map(work, [argv[2] % i for i in
+        numpy.random.permutation(range(first.C['Nfiles']))],
+            reduce=reduce)
 
-for i in [45]: #range(Ncat):
+for i in [Ncat]: #range(Ncat):
     outputname = 'halo-%03d-' % i + os.path.basename(argv[2])
     Ntot = numpy.zeros(6, 'i8')
     for j in range(first.C['Nfiles']):

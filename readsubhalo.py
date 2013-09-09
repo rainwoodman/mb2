@@ -46,6 +46,27 @@ extradtype = numpy.dtype([
     ('sfr', 'f4'),
     ('bhmass', 'f4'),
     ('bhmdot', 'f4')])
+bandfilterdtype = numpy.dtype([
+    ('HST.WFC3', 
+        numpy.dtype([('f105w', 'f4'), ('f125w', 'f4'), ('f160w', 'f4')])),
+    ('HST.ACS', 
+        numpy.dtype([('f435w', 'f4'), ('f606w', 'f4'), ('f775w', 'f4'),
+            ('f850lp', 'f4')])),
+    ('Spitzer.Irac', 
+        numpy.dtype([('ch1', 'f4'), ('ch2', 'f4'), ('ch3', 'f4'),
+            ('ch4', 'f4')])),
+    ('FAKE.FAKE', 
+        numpy.dtype([('1500', 'f4'), ('2000', 'f4'), ('2500', 'f4'),
+            ('V', 'f4'), ('Un', 'f4'), ('Vn', 'f4'), ('Vw', 'f4')])),
+    ('SDSS.SDSS', 
+        numpy.dtype([('u', 'f4'), ('g', 'f4'), ('r', 'f4'),
+            ('i', 'f4'), ('z', 'f4')])),
+    ('UKIRT.WFCAM', 
+        numpy.dtype([('Y', 'f4'), ('J', 'f4'), ('H', 'f4'),
+            ('K', 'f4')])),
+    ('GALEX.GALEX', 
+        numpy.dtype([('FUV', 'f4'), ('NUV', 'f4')]))
+    ])
 
 class SnapDir(object):
     def __init__(self, snapid, ROOT):
@@ -66,10 +87,14 @@ class SnapDir(object):
                    flag_double = False
                 if line.startswith('flag_double(header) = 1'):
                    flag_double = True
+                if line.startswith('redshift(header) = '):
+                    self.redshift = float(line[19:])
             class fakeschema:
                 def __getitem__(self, index, flag_double=flag_double):
-                    if flag_double: return numpy.dtype('f8')
-                    return numpy.dtype('f4')
+                    f = lambda : None
+                    if flag_double: f.dtype = numpy.dtype('f8')
+                    else: f.dtype = numpy.dtype('f4')
+                    return f
             self.schema = fakeschema()
         except IOError:
             self.schema = None
@@ -114,10 +139,20 @@ class SnapDir(object):
             see extradtype for a list
         """
         if isinstance(type, basestring):
-            dtype = extradtype[comp]
+            if type == 'subhalo':
+                if comp in extradtype.fields:
+                    dtype = extradtype[comp]
+                elif comp in bandfilterdtype.fields:
+                    dtype = bandfilterdtype[comp]
+                else:
+                    raise KeyError('component `%s` for subhalo property is unknown' % comp)
+            else:
+                raise KeyError('type has to be "subhalo" or 0 - 5')
         else:
             if comp in pdtype.fields:
                 dtype = pdtype[comp]
+            elif comp in bandfilterdtype.fields:
+                dtype = bandfilterdtype[comp]
             else:
                 dtype=self.schema[comp].dtype
         size = os.path.getsize(self.filename(type, comp))

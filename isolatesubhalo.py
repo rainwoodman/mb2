@@ -82,6 +82,7 @@ def main():
     subparsers = parser.add_subparsers(help="commands")
     split_parser = subparsers.add_parser("split", help="split particles to six files")
     split_parser.add_argument("snap", type=SnapDir)
+    split_parser.add_argument("--check", action='store_true', default=False)
     split_parser.set_defaults(func=splitMain)
 
     lookup_parser = subparsers.add_parser("lookup", help="lookup properties")
@@ -116,22 +117,23 @@ def splitMain(args):
             pass
     
     file(snap.subhalodir + '/header.txt', mode='w').write(str(snap.C))
-    depot_par = SubHaloParDepot(snap.tabfile)
+    print snap.tabfile
     depot_sub = SubHaloDepot(snap.tabfile)
     depot_group = GroupDepot(snap.grouptabfile)
     
-    wrong_file_or_die(snap.groupfile, depot_group.Ngroups *
-            groupdtype.itemsize)
+    if not args.check:
+        wrong_file_or_die(snap.groupfile, depot_group.Ngroups *
+                groupdtype.itemsize)
 
-    F = {}
-    for type in range(6):
-        F[type] = {}
-        for field in pdtype.fields:
-            F[type][field] = snap.open(type, field, mode='w')
+        depot_par = SubHaloParDepot(snap.tabfile)
+        F = {}
+        for type in range(6):
+            F[type] = {}
+            for field in pdtype.fields:
+                F[type][field] = snap.open(type, field, mode='w')
         
-
-    halodump = file(snap.subhalofile, 'w')
-    groupdump = file(snap.groupfile, 'w')
+        halodump = file(snap.subhalofile, 'w')
+        groupdump = file(snap.groupfile, 'w')
     
     realgroupid = 0
     for i in range(len(depot_sub)):
@@ -142,16 +144,18 @@ def splitMain(args):
             if snap.hascollective(realgroupid, group[groupid]):
                 fakenhalo = tab[0, 'nhalo'][groupid]
                 depot_subcol = SubHaloDepot(snap.collectivetabfile(realgroupid))
-                depot_parcol = SubHaloParDepot(snap.collectivetabfile(realgroupid))
-                pars = depot_parcol.consume()
                 realhalo = depot_subcol.consume()
                 nhalo = len(realhalo)
                 # skip the pars from ids file (it's of wrong order)
-                junk = depot_par.consume(group['len'][groupid])
-                assert len(pars) == group['len'][groupid]
+                if not args.check:
+                    depot_parcol = SubHaloParDepot(snap.collectivetabfile(realgroupid))
+                    pars = depot_parcol.consume()
+                    junk = depot_par.consume(group['len'][groupid])
+                    assert len(pars) == group['len'][groupid]
             else:
                 nhalo = tab[0, 'nhalo'][groupid]
-                pars = depot_par.consume(group['len'][groupid])
+                if not args.check:
+                    pars = depot_par.consume(group['len'][groupid])
                 realhalo = depot_sub.consume(nhalo)
 
             halo = numpy.empty(nhalo + 1, dtype=realhalo.dtype)
@@ -163,39 +167,47 @@ def splitMain(args):
             halo[:]['groupid'] = realgroupid
             halo[-1]['len'] = group['len'][groupid] - halo['len'][:-1].sum()
             assert (halo['len'] >= 0).all()
+            assert (halo['len'][0:-2] >= halo['len'][1:-1]).all()
             parstart = numpy.concatenate(([0], halo['len'].cumsum()))
             parend = parstart[1:]
             #make sure group and tab are of the same file
             assert group[groupid]['len'] == tab[0, 'length'][groupid]
     
-            for haloid in range(nhalo + 1):
-                parinhalo = pars[parstart[haloid]:parend[haloid]]
-                parinhalo.sort(order='type')
-                start = parinhalo['type'].searchsorted(range(6), side='left')
-                end = parinhalo['type'].searchsorted(range(6), side='right')
-                for type in range(6):
-                    thistype = parinhalo[start[type]:end[type]]
-                    halo[haloid]['massbytype'][type] = thistype['mass'].sum(dtype='f8')
-                    halo[haloid]['lenbytype'][type] = len(thistype)
-                    for field in pdtype.fields:
-                        thistype[field].tofile(F[type][field])
+            if not args.check:
+                for haloid in range(nhalo + 1):
+                    parinhalo = pars[parstart[haloid]:parend[haloid]]
+                    parinhalo.sort(order='type')
+                    start = parinhalo['type'].searchsorted(range(6), side='left')
+                    end = parinhalo['type'].searchsorted(range(6), side='right')
+                    for type in range(6):
+                        thistype = parinhalo[start[type]:end[type]]
+                        halo[haloid]['massbytype'][type] = thistype['mass'].sum(dtype='f8')
+                        halo[haloid]['lenbytype'][type] = len(thistype)
+                        for field in pdtype.fields:
+                            thistype[field].tofile(F[type][field])
             group[groupid]['nhalo'] = nhalo
             print i, 'group', groupid, 'nhalo', \
                     group['nhalo'][groupid], \
-                    'npar', group['len'][groupid]
-            halo.tofile(halodump)        
-            halodump.flush()
-            if not numpy.allclose(group[groupid]['massbytype'],
-                    halo['massbytype'].sum(axis=0)):
-                print group[groupid]['massbytype'], halo['massbytype'].sum(axis=0)
-            assert numpy.all(group[groupid]['lenbytype'] ==
-                   halo['lenbytype'].sum(axis=0))
+                    'npar', group['len'][groupid], halo[-1]['len'], \
+                    'collective', snap.hascollective(realgroupid, group[groupid])
+
+            if not args.check:
+                halo.tofile(halodump)        
+                halodump.flush()
+                assert numpy.all(group[groupid]['lenbytype'] ==
+                       halo['lenbytype'].sum(axis=0))
+                if not numpy.allclose(group[groupid]['massbytype'],
+                        halo['massbytype'].sum(axis=0)):
+                    print group[groupid]['massbytype'], halo['massbytype'].sum(axis=0)
             realgroupid += 1
-        group.tofile(groupdump)
-        groupdump.flush()
-        for type in range(6):
-            for field in pdtype.fields:
-                F[type][field].flush()
+
+        if not args.check:
+            group.tofile(groupdump)
+            groupdump.flush()
+            for type in range(6):
+                for field in pdtype.fields:
+                    F[type][field].flush()
+    assert depot_sub.Nhalo == depot_sub.total_read
 
 def lookupMain(args):
     type = args.type

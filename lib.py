@@ -57,9 +57,8 @@ class SnapDir(SnapDirReadOnly):
     def hascollective(self, groupid, group):
         """ split is at 8.5e6 """
         if self.snapid <= 73: return False
-        if group['len'] > 8.5e6:
-            assert os.path.isfile(self.collectivetabfile(groupid) % 0)
-            return True
+        if group['len'] > 8.8e6:
+            return os.path.isfile(self.collectivetabfile(groupid) % 0)
         return False
 
 class Depot:
@@ -68,7 +67,7 @@ class Depot:
         self.nfile = int(nfile)
         self.dtype = numpy.dtype(dtype)
         self.pool = numpy.empty(0, dtype)
-
+        self.total_read = 0
     def __len__(self): return self.nfile
     @property
     def size(self): return self.nfile
@@ -92,6 +91,7 @@ class Depot:
         else:
             rt = self.pool
             self.pool = numpy.empty(0, self.dtype)
+        self.total_read = self.total_read + len(rt)
         return rt
 
     def _supply(self):
