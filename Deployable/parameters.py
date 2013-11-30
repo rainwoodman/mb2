@@ -5,14 +5,14 @@
 
 
 
-#snapshot_id=18 # z=10
-#snap_z=10.0
+snapshot_id=18 # z=10
+snap_z=10.0
 
-halo_ID=False #choose one specific halo. Set to False for all.
+halo_ID=0 #choose one specific halo. Set to False for all.
 
 snapshot_dir='/home/yfeng1/physics/mb2/'   #<--------------------------------- YOU WILL NEED TO CHANGE THIS
-#halo_file=snapshot_dir + '/galaxy_props/%03d/' % snapshot_id + 'subhalo_tab_%03d' %snapshot_id+'.bin'
-#stars_file=snapshot_dir+ '/galaxy_props/%03d/' %snapshot_id + 'star_props_%03d' %snapshot_id+'.bin'
+halo_file=snapshot_dir + '/galaxy_props/%03d/' % snapshot_id + 'subhalo_tab_%03d' %snapshot_id+'.bin'
+stars_file=snapshot_dir+ '/galaxy_props/%03d/' %snapshot_id + 'star_props_%03d' %snapshot_id+'.bin'
 
 
 
@@ -33,7 +33,7 @@ apply_IGM_absorption=True
 # -------------------------------------------
 # creates full SED for each halo in output_dir/SEDs
 
-output_SEDs=True
+output_SEDs=False
 
 
 # -------------------------------------------
@@ -47,7 +47,7 @@ output_dir='output'
 
 stellar_mass_limit=False #only calculate SED for galaxies with log10(stellar_mass)>stellar_mass_limit. Set to False if no limit.
 
-dark_matter_particle_limit=100  #only calculate SED for galaxies with n_DM>dark_matter_particle_limit. Set to False if no limit.
+dark_matter_particle_limit=False  #only calculate SED for galaxies with n_DM>dark_matter_particle_limit. Set to False if no limit.
 
 
 

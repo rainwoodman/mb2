@@ -3,7 +3,6 @@ import os.path
 from readsubhalo import *
 from readsubhalo import SnapDir as SnapDirReadOnly
 
-ROOT = '/physics/yfeng1/mb2'
 def startend(tab, type):
     """ returns the star end of type from a tab's lenbytype"""
     end = tab['lenbytype'][:, type].cumsum()
@@ -18,7 +17,7 @@ from gaepsi.field import Field
 from gaepsi.cosmology import Cosmology
 
 class SnapDir(SnapDirReadOnly):
-    def __init__(self, snapid, ROOT=ROOT):
+    def __init__(self, snapid, ROOT='../'):
         SnapDirReadOnly.__init__(self, snapid, ROOT)
 
         snapid = self.snapid

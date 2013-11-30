@@ -10,7 +10,7 @@ from scipy import integrate
 import math
 
 
-import parameters as p
+import parameters_new as p
 
 sys.path.append('subroutines/')
 
@@ -29,13 +29,8 @@ snap = readsubhalo.SnapDir(argv[1], p.snapshot_dir)
 
 #------------------------------------------------
 # make output directories
-output_dir = p.output_dir + '/%03d/' % snap.snapid
+output_dir = snap.subhalodir + '/SED'
 os.system('mkdir '+ output_dir)
-
-if p.output_SEDs==True:
-    os.system('mkdir '+ output_dir+'/neb')
-    os.system('mkdir '+ output_dir+'/SEDs')
-    os.system('mkdir '+ output_dir+'/StellarSEDs')
 
 
 #------------------------------------------------
@@ -53,13 +48,49 @@ ages=numpy.array(ages)
 #------------------------------------------------
 #------------------------------------------------
 # read in SSPs
-mets=[0.05,0.02,0.008,0.004,0.0004]
+mets=numpy.array([0.05,0.02,0.008,0.004,0.0004])
 metsl={0.05:'005',0.02:'002',0.008:'0008',0.004:'0004',0.0004:'00004'}
 
 ssp={}
 for Z in mets:ssp[Z]=getattr(population_synthesis,'pegase')('Salpeter/i.z'+metsl[Z])
 
-lam=ssp[0.02]['lam']
+# now we convert the ssps to an array
+
+sspdtype = numpy.dtype([
+    ('Z', 'f8'),
+    ('frac', ('f8', 52)),
+    ('lam', ('f8', 1220)),
+    ('sed', ('f8', (52, 1220))),
+    ('bolometric_luminosity', ('f8', 52)),
+    ('age', ('f8', 52)),
+    ('Hbeta_flux', ('f8', 52)),
+    ('nebula', ('f8', len(nebula_lines))),
+    ])
+
+nebula_lam = numpy.empty(len(nebula_lines), 'f8')
+nebula_name = numpy.empty(len(nebula_lines), 'S20')
+sspa = numpy.empty(len(mets), dtype=sspdtype)
+lines = list(nebula_lines.keys())
+
+for j, line in enumerate(lines):
+    nebula_lam[j] = nebula_lines[line]['l']
+    nebula_name[j] = line
+
+for i, Z in enumerate(mets):
+    sspitem = sspa[i]
+    sspitem['Z'] = Z
+    sspi = getattr(population_synthesis,'pegase')('Salpeter/i.z'+metsl[Z])
+    sspitem['frac'][:] = sspi['frac']
+    sspitem['lam'][:] = sspi['lam']
+    sspitem['sed'][:] = sspi['sed']
+    sspitem['bolometric_luminosity'][:] = sspi['bolometric_luminosity']
+    sspitem['age'][:] = sspi['age']
+    sspitem['Hbeta_flux'][:] = sspi['nebula_lines']['fluxes']['Hbeta']
+    for j, line in enumerate(lines):
+        sspitem['nebula'][j] = nebula_lines[line][Z]
+
+lam=sspa[0]['lam']
+
 lamz=lam*(1.+snap.redshift)
 
 #------------------------------------------------
@@ -71,6 +102,8 @@ numpy.save('lam.npy',lam)
 igm=continuum.expteff(lam*(1.+snap.redshift),snap.redshift)
 
 
+subtab = snap.readsubhalo()
+
 #------------------------------------------------
 #------------------------------------------------
 # Define observed Filters
@@ -79,8 +112,13 @@ igm=continuum.expteff(lam*(1.+snap.redshift),snap.redshift)
 #Read in filter transmission curves, and interpolate onto wavelength grid
 obs_fT={}
 obs_filters=[]
+obs_outputs = {}
 for filter_set_key in p.obs_filter_sets.keys():
+    obs_outputs[filter_set_key] = {}
+    os.system('mkdir -p '+ snap.subhalodir + '/subhalo/ObsFilter/' + filter_set_key)
     for f in p.obs_filter_sets[filter_set_key]:     
+        obs_outputs[filter_set_key][f] = numpy.memmap(snap.filename('subhalo',
+            'ObsFilter/' + filter_set_key + '/' + f), shape=len(subtab), dtype='f4', mode='w+')
     
         obs_filters.append((filter_set_key, f))
     
@@ -92,13 +130,6 @@ for filter_set_key in p.obs_filter_sets.keys():
         filter_trans_T[numpy.where(filter_trans_T<0.05*maxT)]=0.0                                
         obs_fT[f]=numpy.interp(lamz,filter_trans_l,filter_trans_T)
 
-
-
-
-
-
-
-
 #------------------------------------------------
 #------------------------------------------------
 # Define rest_frame filters - suffixed '_r'
@@ -107,8 +138,13 @@ for filter_set_key in p.obs_filter_sets.keys():
 #Read in filter transmission curves, and interpolate onto wavelength grid
 rest_fT={}
 rf_filters=[]
+rf_outputs = {}
 for filter_set_key in p.rf_filter_sets.keys():
+    rf_outputs[filter_set_key] = {}
+    os.system('mkdir -p '+ snap.subhalodir + '/subhalo/RfFilter/' + filter_set_key)
     for f in p.rf_filter_sets[filter_set_key]:   
+        rf_outputs[filter_set_key][f] = numpy.memmap(snap.filename('subhalo',
+            'RfFilter/' + filter_set_key + '/' + f), shape=len(subtab), dtype='f4', mode='w+')
     
         rf_filters.append((filter_set_key, f))
        
@@ -128,26 +164,6 @@ for filter_set_key in p.rf_filter_sets.keys():
 #------------------------------------------------
 # Main Code
 
-
-#------------------------------------------------
-#------------------------------------------------
-# setup outputs
-out_cols=['index','gas_mass','BH_mass','DM_mass','sfr','stellar_mass']+['stellar_mass_wrec']
-properties={}
-
-
-#MBHS = readMB.MBHaloStars(p.halo_file,p.stars_file)
-subtab = snap.readsubhalo()
-subtabsfr = snap.load('subhalo', 'sfr')
-outputs = {}
-for filter_set_key in p.obs_filter_sets.keys():
-    outputs[filter_set_key] = numpy.memmap(snap.filename('subhalo',
-        filter_set_key), shape=len(subtab), dtype=readsubhalo.bandfilterdtype[filter_set_key], mode='w+')
-
-for filter_set_key in p.rf_filter_sets.keys():
-    outputs[filter_set_key] = numpy.memmap(snap.filename('subhalo',
-        filter_set_key), shape=len(subtab), dtype=readsubhalo.bandfilterdtype[filter_set_key], mode='w+')
-
 starmass = snap.load(4, 'mass', subtab)
 starmet = snap.load(4, 'met', subtab)
 starsft = snap.load(4, 'sft', subtab)
@@ -158,164 +174,117 @@ print '-------------------------------'
 print '-------------------------------'
 
 
-if p.halo_ID==False:
-    do_halos=len(subtab) #do all halos
-else:
-    do_halos=1
+selectedhalos = ((subtab['lenbytype'][:, 4] > 0) & ~numpy.isnan(subtab['mass'])).nonzero()[0]
+SEDindex = numpy.memmap(snap.subhalodir + '/SED/index.raw',
+        shape=len(subtab), dtype=('i8'), mode='w+')
+SEDindex[:] = -1
+SEDindex[selectedhalos] = numpy.arange(len(selectedhalos))
+SEDindex.flush()
 
+StellarSEDs = numpy.memmap(snap.subhalodir + '/SED/stellar.raw',
+        shape=len(selectedhalos), dtype=('f4', len(lam)), mode='w+')
+FullSEDs = numpy.memmap(snap.subhalodir + '/SED/full.raw',
+        shape=len(selectedhalos), dtype=('f4', len(lam)), mode='w+')
 
-for i in range(do_halos):
-
-
-    if p.halo_ID==False:
-        id=i    
-    else:
-        id=p.halo_ID
+for i, id in enumerate(selectedhalos):
         
     halo=subtab[id]
-    sfr=subtabsfr[id]
     stellar_mass=halo['massbytype'][4]*10**10
-    gas_mass=halo['massbytype'][0]*10**10
-    BH_mass=halo['massbytype'][5]*10**10
-    DM_mass=halo['massbytype'][1]*10**10
     n_DM=halo['lenbytype'][1]
 
-    
-    #------------------------------------------------
-    # check the halo meets the stellar mass and number of DM particles limits
-    
-    halo_selected=True
-    
-    if p.stellar_mass_limit != False:
-        if numpy.log10(stellar_mass)<p.stellar_mass_limit:
-            halo_selected=False
-            
-    if p.dark_matter_particle_limit != False:
-        if n_DM<p.dark_matter_particle_limit:
-            halo_selected=False    
-    
-    
     #------------------------------------------------
     # construct stellar SED and nebula lines
        
-    if halo_selected==True:
-        
-        properties['index']=id
-        properties['gas_mass']=gas_mass
-        properties['DM_mass']=DM_mass
-        properties['stellar_mass']=stellar_mass
-        properties['BH_mass']=BH_mass
-        properties['sfr']=sfr
-        
-        
-        print '-------------------------------'
-        print '-------------------------------'
-        
-        print 'Halo ID:',id
-        print 'log10(M_DM):',numpy.round(numpy.log10(DM_mass),3)
-        print 'log10(M_*):',numpy.round(numpy.log10(stellar_mass),3)
-        
-        
-        stellar_mass_wrec=0.0 #stellar masses corrected for recycling
-        
-        
-        halostarmass = starmass[id]
-        halostarmet = starmet[id]
-        halostarsft = starsft[id]
-        for si in range(halo['lenbytype'][4]):
-            mass=halostarmass[si]
-            z=(1./halostarsft[si])-1
-            
-            Z=halostarmet[si]
-            Zi=u.find_nearest(mets,Z)
-            Zn=mets[Zi]
-            
-            age=numpy.interp(z,redshifts,ages)*1000.
-            agei=u.find_nearest(ssp[Zn]['age'],age)
-            agen=ssp[Zn]['age'][agei]
-            
-            stellar_mass_wrec+=mass*ssp[Zn]['frac'][agei]
-            
-                        
-            ste_sed=(10**10)*mass*ssp[Zn]['sed'][agei] # stellar SED for just this star!
-            
-            Hbeta_flux=mass*(10**10)*ssp[Zn]['nebula_lines']['fluxes']['Hbeta'][agei]
-                                                              
-            if si==0:
-                stellar_sed=ste_sed
-                lam=ssp[Zn]['lam']                
-                nbl={}
-                for line in nebula_lines.keys():nbl[line]=Hbeta_flux*nebula_lines[line][Zn]                                                       
-            else:
-                stellar_sed=stellar_sed+ste_sed
-                for line in nebula_lines.keys():nbl[line]=nbl[line]+Hbeta_flux*nebula_lines[line][Zn]  
+    #print 'Halo ID:',id, halo['lenbytype'][4]
+    if i % 1000 == 0:
+        print 'Halo', i, id, halo['lenbytype'][4]
+    stellar_mass_wrec=0.0 #stellar masses corrected for recycling
+    
+    halostarmass = starmass[id]
+    halostarmet = starmet[id]
+    halostarsft = starsft[id]
 
-                    
+    z =(1./halostarsft)-1
+    age = numpy.interp(z, redshifts, ages) * 1000.
 
-        #------------------------------------------------
-        # save stellar mass with recycling
-        
-        stellar_mass_wrec=stellar_mass_wrec*10**10
-        properties['stellar_mass_wrec']=stellar_mass_wrec
-        
-        print 'log10(M_*_rec):',numpy.round(numpy.log10(stellar_mass_wrec),3)
-        print 'fraction of initial mass remaining:',numpy.round(stellar_mass_wrec/stellar_mass,3)
-        
-        
-                
-        #------------------------------------------------
-        # add nebula lines 
-                
-        if p.include_nebular_emission==True:
-        
-            stellar_sed_lam=stellar_sed*(3.*10**8)*(10**10)/(lam**2)
+    Zi = numpy.abs(sspa['Z'][:, None] - halostarmet[None, :]).argmin(axis=0)
+    agei = numpy.empty(len(Zi), dtype='intp')
+    for k in range(len(sspa)):
+        mask = k == Zi
+        agei[mask] = \
+            numpy.abs(sspa['age'][k][None, :] - age[mask][:, None]).argmin(axis=-1)
+    # use rind to quickly access the Zi, agei from the raveled arrays)
+    rind = numpy.ravel_multi_index((Zi, agei), sspa['age'].shape)
 
-            sed_lam=stellar_sed_lam
-            for line in nebula_lines.keys():
-                l=nebula_lines[line]['l']
-                FWHM=velocity*l/(299792.) #l in \AA, velocity in kms, c in kms
-                sigma=FWHM/2.3548                        
-                sed_lam=sed_lam+nbl[line]*(1./(sigma*numpy.sqrt(2.*math.pi)))*(numpy.exp(-((lam-l)**2)/(2.*sigma**2)))
-       
-            sed=sed_lam/((3.*10**8)*(10**10)/(lam**2)) #convert back to f_nu
-        
-        else:
+    stellar_mass_wrec = 1e10 * (halostarmass * sspa['frac'].take(rind)).sum(dtype='f8')
+
+    # use bincount to combine sum on the same sed
+    wt = numpy.bincount(rind, weights=1e10 * halostarmass, 
+            minlength=numpy.prod(sspa['age'].shape))
+    ste_sed = (sspa['sed'].reshape(-1, len(lam)) * wt[:, None]).sum(axis=0)
+    Hbeta_flux=halostarmass*(1e10)*sspa['Hbeta_flux'].take(rind)
+
+    # use bincount to combine sum on the same nebula line set
+    # bin on metalicity
+    wt = numpy.bincount(Zi, weights=Hbeta_flux, 
+            minlength=len(sspa))
+    nbl = (wt[:, None] * sspa['nebula']).sum(axis=0)
+
+    stellar_sed = ste_sed.copy()
+    #------------------------------------------------
+    # save stellar mass with recycling
+    
+    #print 'log10(M_*_rec):',numpy.round(numpy.log10(stellar_mass_wrec),3)
+    #print 'fraction of initial mass remaining:',numpy.round(stellar_mass_wrec/stellar_mass,3)
+    
+    #------------------------------------------------
+    # add nebula lines 
             
-            sed=stellar_sed
-        
-         
-                
-        #-------
-        # apply IGM absorption
-        
-        if p.apply_IGM_absorption==True:       
-            sed=sed*igm
-        
-        
-        if p.output_SEDs==True:
-         
-             #-------
-             # save full SED
-             numpy.save(output_dir+ '/SEDs/%09d' % id +'.npy',sed) 
-             numpy.save(output_dir+ '/StellarSEDs/%09d' % id +'.npy',stellar_sed) 
-         
-        #--------
-        # determine fluxes in each band 
-        for fs, f in obs_filters:
-            properties[f]=integrate.trapz(sed*obs_fT[f],x=lamz)/integrate.trapz(obs_fT[f],x=lamz)
-            outputs[fs][f][id] = properties[f] / 1e28
-        for fs, f in rf_filters:
-            properties[f+'_r']=integrate.trapz(sed*rest_fT[f],x=lam)/integrate.trapz(rest_fT[f],x=lam)
-            outputs[fs][f][id] = properties[f + '_r'] / 1e28
-        
-        print '---- --------------------- ----'
-        print '---- rest-frame photometry ----'
-        
-        for fs, f in rf_filters:
-            print f,numpy.round(properties[f+'_r']/10**28,3)      
+    if p.include_nebular_emission==True:
+    
+        stellar_sed_lam=stellar_sed*(3.*10**8)*(10**10)/(lam**2)
 
-        print '-- observed-frame photometry --'
+        FWHM=velocity*nebula_lam/(299792.) #l in \AA, velocity in kms, c in kms
+        sigma=FWHM/2.3548                        
+        sed_lam =  stellar_sed_lam + \
+                (1. / (sigma[None, :]* numpy.sqrt(2.*math.pi)) * \
+                numpy.exp(-((lam[:, None]-nebula_lam[None,
+                    :])**2)/(2.*sigma[None, :]**2))*nbl[None, :]).sum(axis=-1)
+   
+        sed=sed_lam/((3.*10**8)*(10**10)/(lam**2)) #convert back to f_nu
+    
+    else:
         
-        for fs, f in obs_filters:
-            print f,numpy.round(properties[f]/10**28,3)    
+        sed=stellar_sed
+    
+     
+            
+    #-------
+    # apply IGM absorption
+    
+    if p.apply_IGM_absorption==True:       
+        sed=sed*igm
+    
+    
+    # save seds
+    StellarSEDs[i][:] = stellar_sed
+    FullSEDs[i][:] = sed
+     
+    #--------
+    # determine fluxes in each band 
+    for fs, f in obs_filters:
+        flux = integrate.trapz(1 / lamz * sed*obs_fT[f],x=lamz)/integrate.trapz(1 / lamz * obs_fT[f],x=lamz)
+        obs_outputs[fs][f][id] = flux / 1e28
+    for fs, f in rf_filters:
+        flux = integrate.trapz(1 / lam * sed*rest_fT[f],x=lam)/integrate.trapz(1 / lam * rest_fT[f],x=lam)
+        rf_outputs[fs][f][id] = flux / 1e28
 
+StellarSEDs.flush()
+FullSEDs.flush()
+for fs in obs_outputs:
+    for f in obs_outputs[fs]:
+        obs_outputs[fs][f].flush()
+for fs in rf_outputs:
+    for f in rf_outputs[fs]:
+        rf_outputs[fs][f].flush()
+        

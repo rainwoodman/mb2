@@ -6,7 +6,6 @@ import numpy
 import argparse
 from sys import argv
 import os.path
-ROOT = '/physics/yfeng1/mb2'
 class SubHaloParDepot(Depot):
     def __init__(self, tabfile):
         self.tabfile = tabfile
@@ -78,34 +77,49 @@ class GroupDepot(Depot):
         return rt
 
 def main():
+
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(help="commands")
-    split_parser = subparsers.add_parser("split", help="split particles to six files")
-    split_parser.add_argument("snap", type=SnapDir)
-    split_parser.add_argument("--check", action='store_true', default=False)
-    split_parser.set_defaults(func=splitMain)
 
-    lookup_parser = subparsers.add_parser("lookup", help="lookup properties")
-    lookup_parser.add_argument("snap", type=SnapDir)
-    lookup_parser.add_argument("type", type=int)
-    lookup_parser.add_argument("field")
-    lookup_parser.set_defaults(func=lookupMain)
+    sp = subparsers.add_parser("split", help="split particles to six files")
+    sp.add_argument("snap", type=SnapDir)
+    sp.add_argument("--check", action='store_true', default=False)
+    sp.set_defaults(func=splitMain)
 
-    fix_parser = subparsers.add_parser("fixgroupid", help="fix group id")
-    fix_parser.add_argument("snap", type=SnapDir)
-    fix_parser.set_defaults(func=fixgroupidMain)
+    sp = subparsers.add_parser("lookup", help="lookup properties")
+    sp.add_argument("snap", type=SnapDir)
+    sp.add_argument("type", type=int)
+    sp.add_argument("field")
+    sp.set_defaults(func=lookupMain)
+
+    sp = subparsers.add_parser("fixgroupid", help="fix group id")
+    sp.add_argument("snap", type=SnapDir)
+    sp.set_defaults(func=fixgroupidMain)
+
+    sp = subparsers.add_parser("subhalotype", help="add type property to subhalo")
+    sp.add_argument("snap", type=SnapDir)
+    sp.set_defaults(func=subhalotypeMain)
 
     args = parser.parse_args()
 
     args.func(args)
 
 def fixgroupidMain(args):
+    """ no need for newer isolatehalo """
     snap = args.snap
     g = snap.readgroup()
     sub = numpy.memmap(snap.subhalofile, mode='r+', dtype=subdtype)
     sub['groupid'] = numpy.repeat(numpy.arange(len(g)), g['nhalo'] + 1)
     sub.flush()
     print 'fixed', snap.snapid
+
+def subhalotypeMain(args):
+    snap = args.snap
+    g = snap.readsubhalo()
+    cmask = numpy.memmap(snap.filename('subhalo', 'type'), 
+            mode='w+', dtype='u1', shape=len(g))
+    cmask[:] = numpy.isnan(g['mass'])
+    cmask.flush()
 
 def splitMain(args):
     snap = args.snap
