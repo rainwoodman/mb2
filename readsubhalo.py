@@ -11,7 +11,7 @@ subdtype = numpy.dtype([
     ('parent', 'i4'),             # parent structure
     ('massbytype', ('f4', 6)),  
     ('lenbytype', ('u4',6)), 
-    ('unused', 'f4'),    
+    ('unused', 'u4'),    
     ('groupid', 'u4'),            # group id
    ])
 
@@ -238,21 +238,24 @@ class SnapDir(object):
         if type == 'group':
             if type == 'tab':
                 return self.readgroup()
+            itype = None
         elif type == 'subhalo':
             if comp == 'tab':
-                return self.readsubhalo()
+                return self.readsubhalo(g=g)
             if comp in extradtype.names:
                 dtype = extradtype[comp]
             elif comp.startswith('RfFilter') or comp.startswith('ObsFilter'):
                 dtype = numpy.dtype('f4')
             else:
                 raise KeyError('component `%s` for subhalo property is unknown' % comp)
+            itype = None
         elif type in '012345':
             if comp in pdtype.names:
                 dtype = pdtype[comp]
             else:
                 print comp,pdtype.names
                 dtype=self.schema[comp].dtype
+            itype = int(type)
         else:
             raise KeyError('type has to be "subhalo" or 0 - 5')
 
@@ -266,7 +269,10 @@ class SnapDir(object):
                             dtype=dtype)
         if g is None:
             return rt
-        rt = packarray(rt, g['lenbytype'][:, itype])
+        if itype is not None:
+            rt = packarray(rt, g['lenbytype'][:, itype])
+        else:
+            rt = packarray(rt, g['nhalo'] + 1)
         return rt
     def open(self, type, comp, mode='r'):
         return file(self.filename(type, comp), mode=mode)

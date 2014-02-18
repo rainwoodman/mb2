@@ -6,6 +6,8 @@ import numpy
 import argparse
 from sys import argv
 import os.path
+import sharedmem
+
 class SubHaloParDepot(Depot):
     def __init__(self, tabfile):
         self.tabfile = tabfile
@@ -96,9 +98,9 @@ def main():
     sp.add_argument("snap", type=SnapDir)
     sp.set_defaults(func=fixgroupidMain)
 
-    sp = subparsers.add_parser("subhalotype", help="add type property to subhalo")
+    sp = subparsers.add_parser("haloextra", help="add sfr and bhmass etc to subhalo")
     sp.add_argument("snap", type=SnapDir)
-    sp.set_defaults(func=subhalotypeMain)
+    sp.set_defaults(func=haloextraMain)
 
     args = parser.parse_args()
 
@@ -115,11 +117,6 @@ def fixgroupidMain(args):
 
 def subhalotypeMain(args):
     snap = args.snap
-    g = snap.readsubhalo()
-    cmask = numpy.memmap(snap.filename('subhalo', 'type'), 
-            mode='w+', dtype='u1', shape=len(g))
-    cmask[:] = numpy.isnan(g['mass'])
-    cmask.flush()
 
 def splitMain(args):
     snap = args.snap
@@ -144,6 +141,9 @@ def splitMain(args):
         for type in range(6):
             F[type] = {}
             for field in pdtype.fields:
+                if type != 4 and \
+                    (field == 'SEDindex' or field == 'recfrac'):
+                    continue
                 F[type][field] = snap.open(type, field, mode='w')
         
         halodump = file(snap.subhalofile, 'w')
@@ -197,7 +197,7 @@ def splitMain(args):
                         thistype = parinhalo[start[type]:end[type]]
                         halo[haloid]['massbytype'][type] = thistype['mass'].sum(dtype='f8')
                         halo[haloid]['lenbytype'][type] = len(thistype)
-                        for field in pdtype.fields:
+                        for field in F[type]:
                             thistype[field].tofile(F[type][field])
             group[groupid]['nhalo'] = nhalo
             print i, 'group', groupid, 'nhalo', \
@@ -255,6 +255,46 @@ def lookupMain(args):
     del idsorted
 
     val.tofile(snap.open(type, field, 'w'))
+
+def haloextraMain(args):
+    snap = args.snap
+    g = snap.readsubhalo()
+    try:
+        os.makedirs(snap.subhalodir + '/subhalo')
+    except OSError:
+        pass
+    for ptype, field in [
+            (None, 'type'), 
+            (0, 'sfr'), 
+            (5, 'bhmdot'), 
+            (5, 'bhmass')]:
+        dtype = extradtype[field]
+        try:
+       #     wrong_file_or_die(snap.filename('subhalo', field),
+       #         dtype.itemsize * len(g))
+            pass
+        except: 
+            continue
+        target = numpy.memmap(snap.filename('subhalo', field),
+            shape=len(g), dtype=dtype, mode='w+')
+        if ptype is not None:
+            input = snap.load(ptype, field, g)
+            target[:] = 0
+            ind = (g['lenbytype'][:, ptype] > 0).nonzero()[0]
+            print len(ind)
+            with sharedmem.MapReduce() as pool:
+                chunksize = 1024
+                def work(s):
+                    for i in ind[s:s+chunksize]:
+                        target[i] = input[i].sum()
+                if len(ind) > 0:
+                    pool.map(work, range(0, len(ind), chunksize))
+        else:
+            print numpy.isnan(g['mass']).sum()
+            target[:] = numpy.isnan(g['mass'])
+            lg = snap.readgroup()
+            assert (target[:] == 1).sum() == len(lg)
+        target.flush()
 
 if __name__ == '__main__':
     main()

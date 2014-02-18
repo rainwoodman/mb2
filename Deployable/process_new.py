@@ -93,9 +93,6 @@ lam=sspa[0]['lam']
 
 lamz=lam*(1.+snap.redshift)
 
-#------------------------------------------------
-# save wavelength grid
-numpy.save('lam.npy',lam)
 
 #------------------------------------------------
 # build IGM array
@@ -103,6 +100,11 @@ igm=continuum.expteff(lam*(1.+snap.redshift),snap.redshift)
 
 
 subtab = snap.readsubhalo()
+selectedhalos = ((subtab['lenbytype'][:, 4] > 0) & ~numpy.isnan(subtab['mass'])).nonzero()[0]
+
+starmass = snap.load(4, 'mass', subtab)
+starmet = snap.load(4, 'met', subtab)
+starsft = snap.load(4, 'sft', subtab)
 
 #------------------------------------------------
 #------------------------------------------------
@@ -157,6 +159,9 @@ for filter_set_key in p.rf_filter_sets.keys():
         rest_fT[f]=numpy.interp(lam,filter_trans_l,filter_trans_T)
 
 
+#------------------------------------------------
+# save wavelength grid
+numpy.save('lam.npy',lam)
 
 
 
@@ -164,17 +169,12 @@ for filter_set_key in p.rf_filter_sets.keys():
 #------------------------------------------------
 # Main Code
 
-starmass = snap.load(4, 'mass', subtab)
-starmet = snap.load(4, 'met', subtab)
-starsft = snap.load(4, 'sft', subtab)
-
 print 'Total Number of Halos:',len(subtab)
 
 print '-------------------------------'
 print '-------------------------------'
 
 
-selectedhalos = ((subtab['lenbytype'][:, 4] > 0) & ~numpy.isnan(subtab['mass'])).nonzero()[0]
 SEDindex = numpy.memmap(snap.subhalodir + '/SED/index.raw',
         shape=len(subtab), dtype=('i8'), mode='w+')
 SEDindex[:] = -1
@@ -190,7 +190,6 @@ for i, id in enumerate(selectedhalos):
         
     halo=subtab[id]
     stellar_mass=halo['massbytype'][4]*10**10
-    n_DM=halo['lenbytype'][1]
 
     #------------------------------------------------
     # construct stellar SED and nebula lines
